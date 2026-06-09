@@ -1,5 +1,8 @@
 from playwright.sync_api import sync_playwright
 from pathlib import Path
+from urllib.parse import unquote, urljoin
+from datetime import datetime
+import html as html_lib
 import time
 import re
 
@@ -19,33 +22,165 @@ def save_html(name, page):
     print(f"[SAVED] {file}")
 
 
+MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "sept": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12
+}
+
+
+def parse_date_score(text):
+
+    text = unquote(
+        html_lib.unescape(text or "")
+    )
+
+    candidates = []
+
+    for day, month, year in re.findall(
+        r"\b(\d{1,2})[-/ ]([A-Za-z]{3,9})[-/ ](20\d{2})\b",
+        text,
+        re.IGNORECASE
+    ):
+
+        month_no = MONTHS.get(month[:3].lower())
+
+        if month_no:
+            candidates.append(
+                datetime(int(year), month_no, int(day))
+            )
+
+    for day, month, year in re.findall(
+        r"\b(\d{1,2})[-/](\d{1,2})[-/](20\d{2})\b",
+        text
+    ):
+
+        day_no = int(day)
+        month_no = int(month)
+
+        if 1 <= day_no <= 31 and 1 <= month_no <= 12:
+            candidates.append(
+                datetime(int(year), month_no, day_no)
+            )
+
+    for month, year in re.findall(
+        r"\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+(20\d{2})\b",
+        text,
+        re.IGNORECASE
+    ):
+
+        month_no = MONTHS.get(month[:3].lower())
+
+        if month_no:
+            candidates.append(
+                datetime(int(year), month_no, 1)
+            )
+
+    return max(candidates) if candidates else datetime.min
+
+
+def pick_latest_xbrl(page):
+
+    links = []
+
+    for i, anchor in enumerate(
+        page.locator("a[href*='XBRLFILES']").all()
+    ):
+
+        href = anchor.get_attribute("href")
+
+        if not href:
+            continue
+
+        row_text = ""
+
+        try:
+            row_text = anchor.evaluate(
+                """(e) => {
+                    const row = e.closest('tr');
+                    return row ? row.innerText : e.innerText;
+                }"""
+            )
+        except Exception:
+            row_text = anchor.inner_text()
+
+        url = urljoin(
+            "https://www.bseindia.com",
+            href
+        )
+
+        score = parse_date_score(
+            f"{row_text} {url}"
+        )
+
+        links.append(
+            {
+                "url": url,
+                "row_text": row_text,
+                "score": score,
+                "index": i
+            }
+        )
+
+    if not links:
+        return None, []
+
+    links.sort(
+        key=lambda x: (
+            x["score"],
+            -x["index"]
+        ),
+        reverse=True
+    )
+
+    return links[0], links
+
+
+def latest_quarter_label(page):
+
+    html = page.content()
+
+    labels = sorted(
+        set(
+            re.findall(
+                r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\s+20\d{2}\b",
+                html,
+                re.IGNORECASE
+            )
+        ),
+        key=parse_date_score,
+        reverse=True
+    )
+
+    return labels[0] if labels else None
+
+
 def save_latest_xbrl(page, name):
 
     try:
 
-        html = page.content()
-
-        matches = re.findall(
-            r'href="([^"]*XBRLFILES[^"]*)"',
-            html,
-            re.IGNORECASE
-        )
+        selected, matches = pick_latest_xbrl(page)
 
         print(f"{name}: Found {len(matches)} XBRL URLs")
 
-        if not matches:
+        if not selected:
             return
 
-        xbrl_url = matches[0]
-
-        if xbrl_url.startswith("/"):
-            xbrl_url = (
-                "https://www.bseindia.com"
-                + xbrl_url
-            )
+        xbrl_url = selected["url"]
 
         print(f"\n{name} XBRL URL:")
         print(xbrl_url)
+        print(f"{name} XBRL source row: {selected['row_text']}")
 
         xbrl_page = page.context.new_page()
 
@@ -115,8 +250,8 @@ with sync_playwright() as p:
 
     try:
         page.keyboard.press("Escape")
-    except:
-        pass
+    except Exception as e:
+        print("Popup close skipped:", e)
 
     # --------------------------------------------------
     # SEARCH COMPANY
@@ -200,9 +335,19 @@ with sync_playwright() as p:
 
         print("\nOpening latest governance quarter...")
 
+        quarter = latest_quarter_label(page)
+
+        if not quarter:
+            raise RuntimeError(
+                "No governance quarter label found on listing page"
+            )
+
+        print(f"Latest governance quarter: {quarter}")
+
         page.get_by_text(
-            "Mar 2026"
-        ).click()
+            quarter,
+            exact=True
+        ).first.click()
 
         page.wait_for_load_state(
             "networkidle"
@@ -241,8 +386,8 @@ with sync_playwright() as p:
 
         time.sleep(2)
 
-    except:
-        pass
+    except Exception as e:
+        print("Return to company page before shareholding failed:", e)
 
     # --------------------------------------------------
     # SHAREHOLDING
@@ -288,8 +433,8 @@ with sync_playwright() as p:
 
         time.sleep(2)
 
-    except:
-        pass
+    except Exception as e:
+        print("Return to company page before BRSR failed:", e)
 
     # --------------------------------------------------
     # BRSR

@@ -2,8 +2,10 @@ from bs4 import BeautifulSoup
 from pathlib import Path
 import json
 import re
+import sys
 
 O = Path("output")
+WARNINGS = []
 
 R = {
     "finance": {
@@ -42,12 +44,19 @@ def read_html(name):
     p = O / name
 
     if not p.exists():
+        warn(f"Missing input file: {p}")
         return None
 
     return p.read_text(
         encoding="utf-8",
         errors="ignore"
     )
+
+
+def warn(message):
+
+    WARNINGS.append(message)
+    print(f"[WARN] {message}", file=sys.stderr)
 
 
 def clean(x):
@@ -70,8 +79,142 @@ def to_num(x):
 
     try:
         return float(x)
-    except:
+    except ValueError:
         return x
+
+
+def norm(x):
+
+    return re.sub(
+        r"[^a-z0-9]+",
+        " ",
+        clean(x).lower()
+    ).strip()
+
+
+def norm_compact(x):
+
+    return re.sub(
+        r"[^a-z0-9]+",
+        "",
+        clean(x).lower()
+    )
+
+
+def looks_numbered(value):
+
+    return bool(
+        re.fullmatch(
+            r"\s*\(?\d+[.)]?\s*",
+            clean(value)
+        )
+    )
+
+
+def strip_numbering(row):
+
+    data = row[:]
+
+    if data and looks_numbered(data[0]):
+        data = data[1:]
+
+    while data and not clean(data[0]):
+        data = data[1:]
+
+    return data
+
+
+def build_header_map(rows, required_terms, scan_rows=8):
+
+    required = [
+        norm_compact(x)
+        for x in required_terms
+    ]
+
+    for idx, row in enumerate(rows[:scan_rows]):
+
+        header = [
+            norm_compact(x)
+            for x in row
+        ]
+
+        joined = " ".join(header)
+
+        if all(term in joined for term in required):
+            return idx, header
+
+    return None, []
+
+
+def find_col(header, *needles):
+
+    normalized = [
+        norm_compact(x)
+        for x in needles
+    ]
+
+    for i, h in enumerate(header):
+
+        if any(n in h for n in normalized):
+            return i
+
+    return None
+
+
+def value_at(row, idx, default=""):
+
+    if idx is None or idx >= len(row):
+        return default
+
+    return clean(row[idx])
+
+
+def first_item_value(item, include, exclude=()):
+
+    includes = [
+        norm_compact(x)
+        for x in include
+    ]
+    excludes = [
+        norm_compact(x)
+        for x in exclude
+    ]
+
+    for key, value in item.items():
+
+        normalized = norm_compact(key)
+
+        if (
+            all(x in normalized for x in includes)
+            and not any(x in normalized for x in excludes)
+        ):
+            return value
+
+    return ""
+
+
+def strip_director_title(name):
+
+    return re.sub(
+        r"^(mr|mrs|ms|dr|shri|smt|prof)\.?\s+",
+        "",
+        clean(name),
+        flags=re.IGNORECASE
+    ).strip()
+
+
+def clean_din(value):
+
+    digits = re.sub(
+        r"\D",
+        "",
+        clean(value)
+    )
+
+    if 1 <= len(digits) <= 8:
+        return digits.zfill(8)
+
+    return ""
 
 
 def get_tables(html):
@@ -109,6 +252,142 @@ def get_tables(html):
 
     return tables
 
+#     soup = BeautifulSoup(
+#         html,
+#         "html.parser"
+#     )
+
+#     tables = []
+
+#     for table in soup.find_all("table"):
+
+#         rows = []
+
+#         rowspan_map = {}
+
+#         trs = table.find_all("tr")
+
+#         for r, tr in enumerate(trs):
+
+#             row = []
+
+#             col_pos = 0
+
+#             while (
+#                 col_pos in rowspan_map
+#                 and rowspan_map[col_pos]["rows"] > 0
+#             ):
+#                 row.append(
+#                     rowspan_map[col_pos]["value"]
+#                 )
+
+#                 rowspan_map[col_pos]["rows"] -= 1
+
+#                 if (
+#                     rowspan_map[col_pos]["rows"]
+#                     == 0
+#                 ):
+#                     del rowspan_map[col_pos]
+
+#                 col_pos += 1
+
+#             cells = tr.find_all(
+#                 ["td", "th"]
+#             )
+
+#             for cell in cells:
+
+#                 while (
+#                     col_pos in rowspan_map
+#                     and rowspan_map[col_pos]["rows"] > 0
+#                 ):
+#                     row.append(
+#                         rowspan_map[col_pos]["value"]
+#                     )
+
+#                     rowspan_map[col_pos]["rows"] -= 1
+
+#                     if (
+#                         rowspan_map[col_pos]["rows"]
+#                         == 0
+#                     ):
+#                         del rowspan_map[col_pos]
+
+#                     col_pos += 1
+
+#                 text = clean(
+#                     cell.get_text(
+#                         " ",
+#                         strip=True
+#                     )
+#                 )
+
+#                 colspan = int(
+#                     cell.get(
+#                         "colspan",
+#                         1
+#                     )
+#                 )
+
+#                 rowspan = int(
+#                     cell.get(
+#                         "rowspan",
+#                         1
+#                     )
+#                 )
+
+#                 for offset in range(
+#                     colspan
+#                 ):
+
+#                     row.append(text)
+
+#                     if rowspan > 1:
+
+#                         rowspan_map[
+#                             col_pos + offset
+#                         ] = {
+#                             "value": text,
+#                             "rows": rowspan - 1
+#                         }
+
+#                 col_pos += colspan
+
+#             while True:
+
+#                 if (
+#                     col_pos not in rowspan_map
+#                 ):
+#                     break
+
+#                 if (
+#                     rowspan_map[col_pos]["rows"]
+#                     <= 0
+#                 ):
+#                     del rowspan_map[col_pos]
+#                     continue
+
+#                 row.append(
+#                     rowspan_map[col_pos]["value"]
+#                 )
+
+#                 rowspan_map[col_pos]["rows"] -= 1
+
+#                 if (
+#                     rowspan_map[col_pos]["rows"]
+#                     == 0
+#                 ):
+#                     del rowspan_map[col_pos]
+
+#                 col_pos += 1
+
+#             if row:
+#                 rows.append(row)
+
+#         if rows:
+#             tables.append(rows)
+
+#     return tables
 
 def table_text(table, n=20):
 
@@ -258,23 +537,37 @@ if html:
 
             elif (
                 section
-                and len(row) >= 4
-                and row[0].strip().isdigit()
+                and len(row) >= 3
             ):
+
+                data = strip_numbering(row)
+
+                if len(data) < 3:
+                    continue
+
+                first = norm(data[0])
+
+                if (
+                    "particular" in first
+                    or "year to date" in first
+                    or "quarter" in first
+                    or first == "total"
+                ):
+                    continue
 
                 R["finance"][
                     "segment_reporting"
                 ][section].append(
                     {
                         "segment":
-                            row[1],
+                            data[0],
                         "current":
                             to_num(
-                                row[2]
+                                data[1]
                             ),
                         "ytd":
                             to_num(
-                                row[3]
+                                data[2]
                             )
                     }
                 )
@@ -314,34 +607,170 @@ if html:
 
     if gov_table:
 
-        header = [
-            clean(x).lower()
-            for x in gov_table[0]
-        ]
-
-        name_idx = None
-        din_idx = None
-        cat_idx = None
-
-        for i, h in enumerate(header):
-
-            if (
-                "name of the director"
-                in h
-            ):
-                name_idx = i
-
-            if (
-                h == "din"
-                or "din" in h
-            ):
-                din_idx = i
-
-            if (
+        header_idx, header = build_header_map(
+            gov_table,
+            [
+                "director",
+                "din",
                 "category"
-                in h
-            ):
-                cat_idx = i
+            ],
+            scan_rows=10
+        )
+
+        if (
+            header_idx is not None
+            and
+            header_idx + 1 < len(gov_table)
+        ):
+
+            row1 = [
+                norm_compact(x)
+                for x in gov_table[header_idx]
+            ]
+
+            row2 = [
+                norm_compact(x)
+                for x in gov_table[header_idx + 1]
+            ]
+
+            header = []
+
+            i2 = 0
+
+            for i, h in enumerate(row1):
+
+                if i == 5:
+                    parent = h
+
+                    while i2 < len(row2):
+
+                        child = row2[i2]
+
+                        header.append(
+                            f"{parent}_{child}"
+                        )
+
+                        i2 += 1
+
+                    continue
+
+                header.append(h)
+
+        def value_at(row, idx):
+
+            if idx is None:
+                return None
+
+            if idx >= len(row):
+                return None
+
+            return clean(row[idx])
+
+        name_idx = find_col(
+            header,
+            "nameofthedirector",
+            "directorname"
+        )
+
+        din_idx = find_col(
+            header,
+            "din"
+        )
+
+        cat_idx = find_col(
+            header,
+            "category"
+        )
+
+        disqualified_idx = find_col(
+            header,
+            "whetherthedirectorisdisqualified"
+        )
+
+        disq_start_idx = find_col(
+            header,
+            "startdateofdisqualification"
+        )
+
+        disq_end_idx = find_col(
+            header,
+            "enddateofdisqualification"
+        )
+
+        disq_details_idx = find_col(
+            header,
+            "detailsofdisqualification"
+        )
+
+        status_idx = find_col(
+            header,
+            "currentstatus"
+        )
+
+        special_resolution_idx = find_col(
+            header,
+            "whetherspecialresolutionpassed"
+        )
+
+        special_resolution_date_idx = find_col(
+            header,
+            "dateofpassingspecialresolution"
+        )
+
+        initial_appointment_idx = find_col(
+            header,
+            "initialdateofappointment"
+        )
+
+        reappointment_idx = find_col(
+            header,
+            "dateofreappointment"
+        )
+
+        cessation_date_idx = find_col(
+            header,
+            "dateofcessation"
+        )
+
+        tenure_idx = find_col(
+            header,
+            "tenureofdirector"
+        )
+
+        directorships_idx = find_col(
+            header,
+            "noofdirectorship"
+        )
+
+        independent_directorships_idx = find_col(
+            header,
+            "noofindependentdirectorship"
+        )
+
+        audit_membership_idx = find_col(
+            header,
+            "numberofmembershipsinaudit"
+        )
+
+        audit_chair_idx = find_col(
+            header,
+            "noofpostofchairperson"
+        )
+
+        reason_idx = find_col(
+            header,
+            "reasonforcessation"
+        )
+
+        pan_note_idx = find_col(
+            header,
+            "notesfornotprovidingpan"
+        )
+
+        din_note_idx = find_col(
+            header,
+            "notesfornotprovidingdin"
+        )
 
         if (
             name_idx is not None
@@ -353,7 +782,7 @@ if html:
 
             seen = set()
 
-            for row in gov_table[1:]:
+            for row in gov_table[header_idx + 2:]:
 
                 if len(row) <= max(
                     name_idx,
@@ -362,27 +791,15 @@ if html:
                 ):
                     continue
 
-                din = clean(
+                din = clean_din(
                     row[din_idx]
                 )
 
-                if not re.fullmatch(
-                    r"\d{8}",
-                    din
-                ):
+                if not din:
                     continue
 
-                name = clean(
+                name = strip_director_title(
                     row[name_idx]
-                )
-
-                name = (
-                    name
-                    .replace("Mr ", "")
-                    .replace("Ms ", "")
-                    .replace("Mrs ", "")
-                    .replace("Dr ", "")
-                    .strip()
                 )
 
                 key = (
@@ -401,12 +818,104 @@ if html:
                     {
                         "name": name,
                         "din": din,
-                        "category": clean(
-                            row[cat_idx]
+                        "category": value_at(
+                            row,
+                            cat_idx
+                        ),
+
+                        "disqualified": value_at(
+                            row,
+                            disqualified_idx
+                        ),
+
+                        "disqualification_start": value_at(
+                            row,
+                            disq_start_idx
+                        ),
+
+                        "disqualification_end": value_at(
+                            row,
+                            disq_end_idx
+                        ),
+
+                        "disqualification_details": value_at(
+                            row,
+                            disq_details_idx
+                        ),
+
+                        "current_status": value_at(
+                            row,
+                            status_idx
+                        ),
+
+                        "special_resolution_passed": value_at(
+                            row,
+                            special_resolution_idx
+                        ),
+
+                        "special_resolution_date": value_at(
+                            row,
+                            special_resolution_date_idx
+                        ),
+
+                        "initial_appointment_date": value_at(
+                            row,
+                            initial_appointment_idx
+                        ),
+
+                        "reappointment_date": value_at(
+                            row,
+                            reappointment_idx
+                        ),
+
+                        "cessation_date": value_at(
+                            row,
+                            cessation_date_idx
+                        ),
+
+                        "tenure_months": value_at(
+                            row,
+                            tenure_idx
+                        ),
+
+                        "listed_directorships": value_at(
+                            row,
+                            directorships_idx
+                        ),
+
+                        "independent_directorships": value_at(
+                            row,
+                            independent_directorships_idx
+                        ),
+
+                        "audit_committee_memberships": value_at(
+                            row,
+                            audit_membership_idx
+                        ),
+
+                        "audit_committee_chairmanships": value_at(
+                            row,
+                            audit_chair_idx
+                        ),
+
+                        "reason_for_cessation": value_at(
+                            row,
+                            reason_idx
+                        ),
+
+                        "pan_notes": value_at(
+                            row,
+                            pan_note_idx
+                        ),
+
+                        "din_notes": value_at(
+                            row,
+                            din_note_idx
                         )
                     }
                 )
 
+   
 
 # =====================================================
 # SHAREHOLDING
@@ -417,8 +926,32 @@ html = read_html(
 )
 
 if html:
+    print("\n" + "=" * 60)
+    print("SHAREHOLDING SECTION")
+    print("=" * 60)
+
+    print("\nHTML PREVIEW:")
+    print(html[:500])
 
     tables = get_tables(html)
+
+    print("\nTOTAL TABLES:", len(tables))
+
+    for i, table in enumerate(tables[:10]):
+        print(f"\nTABLE {i}")
+
+        try:
+            print(
+                table_text(
+                    table,
+                    20
+                )[:500]
+            )
+        except Exception as e:
+            print(
+                "TABLE PREVIEW ERROR:",
+                e
+            )
 
     share_table = find_table(
         tables,
@@ -428,43 +961,200 @@ if html:
         ]
     )
 
+    print(
+        "\nSHARE TABLE FOUND:",
+        share_table is not None
+    )
+
     if share_table:
+        print("\nSELECTED TABLE PREVIEW:")
 
-        for row in share_table[1:]:
+        try:
+            print(
+                table_text(
+                    share_table,
+                    40
+                )
+            )
+        except Exception as e:
+            print(
+                "PREVIEW ERROR:",
+                e
+            )
 
-            if len(row) < 4:
+        header_idx, header = build_header_map(
+            share_table,
+            [
+                "category"
+            ],
+            scan_rows=10
+        )
+
+        print("\n=== SHARE HEADER ===")
+        print(
+            "HEADER IDX:",
+            header_idx
+        )
+
+        for i, h in enumerate(header):
+            print(
+                i,
+                repr(h)
+            )
+
+        print("\nFIRST 5 SHARE ROWS")
+
+        for i, row in enumerate(share_table[:5]):
+            print(
+                "\nROW",
+                i
+            )
+            print(row)
+
+        category_idx = find_col(
+            header,
+            "categoryofshareholder",
+            "categoryshareholder"
+        )
+
+        shareholders_idx = find_col(
+            header,
+            "nosofshareholders",
+            "noofshareholders",
+            "numberofshareholders"
+        )
+
+        shares_idx = find_col(
+            header,
+            "fullypaidupequityshares",
+            "noofsharesheld",
+            "numberofsharesheld"
+        )
+
+        depository_idx = find_col(
+            header,
+            "depositoryreceipts"
+        )
+
+        total_shares_idx = find_col(
+            header,
+            "totalnossharesheld"
+        )
+
+        shareholding_pct_idx = find_col(
+            header,
+            "shareholdingasaoftotalnoofshares"
+        )
+
+        voting_rights_idx = find_col(
+            header,
+            "numberofvotingrightsheld"
+        )
+
+        diluted_total_idx = find_col(
+            header,
+            "totalnoofsharesonfullydilutedbasis"
+        )
+
+        diluted_pct_idx = find_col(
+            header,
+            "assumingfullconversion"
+        )
+
+        demat_idx = find_col(
+            header,
+            "equitysharesheldindematerializedform"
+        )
+
+        subcat_idx = find_col(
+            header,
+            "subcategorizationofshares"
+        )
+
+        print("\nCOLUMN INDEXES")
+        print(
+            "category_idx =",
+            category_idx
+        )
+        print(
+            "shareholders_idx =",
+            shareholders_idx
+        )
+        print(
+            "shares_idx =",
+            shares_idx
+        )
+
+        print("\nSHARE TABLE ROW COUNT =", len(share_table))
+
+        for i, row in enumerate(share_table):
+            print(
+                "ROW",
+                i,
+                "LEN=",
+                len(row)
+            )
+
+        start = header_idx + 3
+
+        for row in share_table[start:]:
+            print("\nRAW ROW:", row[:5])
+
+            if len(row) < 3:
+                print("SKIP: len < 3")
                 continue
 
-            category = row[1].strip()
+            category = value_at(
+                row,
+                category_idx
+            )
+
+            shareholders = value_at(
+                row,
+                shareholders_idx
+            )
+
+            print(
+                "CATEGORY=",
+                repr(category),
+                "SHAREHOLDERS=",
+                repr(shareholders)
+            )
+
+            if not category:
+                print("SKIP: no category")
+                continue
 
             low = category.lower()
 
             if (
-                "category of shareholder"
-                in low
-                or
-                low.startswith(
-                    "class eg"
-                )
-                or
-                category == ""
+                "category of shareholder" in low
+                or low.startswith("class eg")
             ):
+                print("SKIP: header row")
                 continue
+
+            print("ADDING:", category)
 
             R["shareholding"][
                 "shareholding_pattern"
             ].append(
                 {
-                    "category":
-                        category,
-                    "shareholders":
-                        row[2],
-                    "shares":
-                        row[3]
+                    "category": category,
+                    "shareholders": shareholders,
+                    "fully_paid_equity_shares": value_at(row, 3),
+                    "shares_underlying_depository_receipts": value_at(row, 5),
+                    "total_shares_held": value_at(row, 6),
+                    "shareholding_percent": value_at(row, 7),
+                    "voting_rights": value_at(row, 8),
+                    "total_voting_rights": value_at(row, 10),
+                    "voting_rights_percent": value_at(row, 11),
+                    "dematerialized_shares": value_at(row, 16),
+                    "subcategory_i": value_at(row, 29),
+                    "subcategory_ii": value_at(row, 30),
+                    "subcategory_iii": value_at(row, 31)
                 }
             )
-
-
 # =====================================================
 # BRSR
 # =====================================================
@@ -488,18 +1178,62 @@ if html:
 
     if brsr_table:
 
+        header_idx, header = build_header_map(
+            brsr_table,
+            [
+                "name",
+                "subsidiary",
+                "associate"
+            ],
+            scan_rows=10
+        )
+
+        name_idx = find_col(
+            header,
+            "nameoftheholding",
+            "nameofholding",
+            "nameofentity",
+            "name"
+        )
+        relationship_idx = find_col(
+            header,
+            "holdingsubsidiaryassociatejointventure",
+            "holdingsubsidiaryassociate",
+            "relationship"
+        )
+        share_idx = find_col(
+            header,
+            "percentageofsharesheld",
+            "shareholding"
+        )
+        participates_idx = find_col(
+            header,
+            "participatesinbusinessresponsibility",
+            "participatesinbr"
+        )
+
         seen = set()
 
-        for row in brsr_table[1:]:
+        start = header_idx + 1 if header_idx is not None else 1
 
-            if len(row) < 5:
+        for row in brsr_table[start:]:
+
+            if len(row) < 4:
                 continue
 
             try:
 
-                name = clean(
-                    row[1]
-                )
+                if name_idx is None:
+                    data = strip_numbering(row)
+                    name = value_at(data, 0)
+                    relationship = value_at(data, 1)
+                    shareholding_percent = value_at(data, 2)
+                    participates_in_br = value_at(data, 3)
+                else:
+                    name = value_at(row, name_idx)
+                    relationship = value_at(row, relationship_idx)
+                    shareholding_percent = value_at(row, share_idx)
+                    participates_in_br = value_at(row, participates_idx)
 
                 if (
                     name.lower().startswith(
@@ -510,7 +1244,7 @@ if html:
 
                 key = (
                     name,
-                    row[2]
+                    relationship
                 )
 
                 if key in seen:
@@ -525,18 +1259,18 @@ if html:
                         "name":
                             name,
                         "relationship":
-                            row[2],
+                            relationship,
                         "shareholding_percent":
                             to_num(
-                                row[3]
+                                shareholding_percent
                             ),
                         "participates_in_br":
-                            row[4]
+                            participates_in_br
                     }
                 )
 
-            except:
-                pass
+            except (IndexError, TypeError, ValueError) as e:
+                warn(f"BRSR row skipped: {e}; row={row}")
 
 # =====================================================
 # CRA
@@ -559,14 +1293,26 @@ if html:
 
     if cra_table:
 
-        header = cra_table[0]
+        header_idx, header = build_header_map(
+            cra_table,
+            [
+                "credit rating agency"
+            ],
+            scan_rows=10
+        )
+
+        if header_idx is None:
+            header_idx = 0
+            header = cra_table[0]
 
         seen = set()
 
-        for row in cra_table[1:]:
+        for row in cra_table[header_idx + 1:]:
 
-            if len(row) != len(header):
+            if len(row) < len(header):
                 continue
+
+            row = row[:len(header)]
 
             item = dict(
                 zip(
@@ -576,26 +1322,11 @@ if html:
             )
 
             key = (
-                item.get(
-                    "Credit Rating Agency Name",
-                    ""
-                ),
-                item.get(
-                    "Credit Rating (actual rating provided)",
-                    ""
-                ),
-                item.get(
-                    "Outlook (actual outlook to be provided)",
-                    ""
-                ),
-                item.get(
-                    "Date of Current Credit Rating / Outlook",
-                    ""
-                ),
-                item.get(
-                    "Rating Assigned on (details of instrument)",
-                    ""
-                )
+                first_item_value(item, ["agency"]),
+                first_item_value(item, ["rating"], ["agency", "outlook"]),
+                first_item_value(item, ["outlook"], ["rating"]),
+                first_item_value(item, ["date"]),
+                first_item_value(item, ["instrument"])
             )
 
             if key in seen:
@@ -630,12 +1361,24 @@ if html:
             "intermediary" in txt
         ):
 
-            header = table[0]
+            header_idx, header = build_header_map(
+                table,
+                [
+                    "erp"
+                ],
+                scan_rows=10
+            )
 
-            for row in table[1:]:
+            if header_idx is None:
+                header_idx = 0
+                header = table[0]
 
-                if len(row) != len(header):
+            for row in table[header_idx + 1:]:
+
+                if len(row) < len(header):
                     continue
+
+                row = row[:len(header)]
 
                 R["erp"].append(
                     dict(
@@ -653,6 +1396,8 @@ if html:
 # SAVE
 # =====================================================
 
+O.mkdir(exist_ok=True)
+
 out = O / "company_data.json"
 
 with open(
@@ -668,13 +1413,13 @@ with open(
         ensure_ascii=False
     )
 
-print(
-    json.dumps(
-        R,
-        indent=4,
-        ensure_ascii=False
-    )
-)
+# print(
+#     json.dumps(
+#         R,
+#         indent=4,
+#         ensure_ascii=False
+#     )
+# )
 
 print(
     "\nSaved:",
