@@ -23,8 +23,11 @@ R = {
         "board_of_directors": []
     },
     "shareholding": {
-        "raw_file": "shareholding_xbrl.html",
-        "shareholding_pattern": []
+    "raw_file": "shareholding_xbrl.html",
+
+    "shareholding_pattern": [],
+
+    "shareholding_pattern_detailed": []
     },
     "brsr": {
         "raw_file": "brsr_xbrl.html",
@@ -934,8 +937,40 @@ if html:
     print(html[:500])
 
     tables = get_tables(html)
+    print("\n\nSEARCHING FOR DETAILED SHAREHOLDING TABLE")
 
-    print("\nTOTAL TABLES:", len(tables))
+    detail_table = None
+
+    for idx, table in enumerate(tables):
+
+        txt = table_text(
+            table,
+            50
+        ).lower()
+
+        if "category & name of the shareholders" in txt:
+
+            print("\nFOUND DETAILED TABLE:", idx)
+
+            detail_table = table
+
+            break
+
+    print(
+        "DETAIL TABLE FOUND =",
+        detail_table is not None
+    )
+
+    if detail_table:
+
+        print("\nFIRST 20 ROWS OF DETAILED TABLE")
+
+        for i, row in enumerate(detail_table[:20]):
+
+            print("\nROW", i)
+            print("LEN =", len(row))
+            print(row)
+        print("\nTOTAL TABLES:", len(tables))
 
     for i, table in enumerate(tables[:10]):
         print(f"\nTABLE {i}")
@@ -1155,6 +1190,151 @@ if html:
                     "subcategory_iii": value_at(row, 31)
                 }
             )
+        
+# =====================================================
+# SHAREHOLDING - DETAILED
+# =====================================================
+
+detail_table = None
+
+for table in tables:
+
+    txt = table_text(
+        table,
+        50
+    ).lower()
+
+    if (
+        "category & name of the shareholders" in txt
+        and
+        "shareholder type" in txt
+    ):
+        detail_table = table
+        break
+
+if detail_table:
+
+    print("\nDETAILED SHAREHOLDING TABLE FOUND")
+
+    for row in detail_table[3:]:
+
+        if len(row) < 2:
+            continue
+
+        shareholder_name = clean(
+            value_at(row, 1)
+        )
+
+        if not shareholder_name:
+            continue
+
+        low = shareholder_name.lower()
+
+        # Skip section/category rows
+        if (
+            low.startswith("table ")
+            or low.startswith("sub-total")
+            or low.startswith("total shareholding")
+            or low == "indian"
+            or low == "foreign"
+        ):
+            continue
+
+        # Keep only rows with actual holdings
+        # if (
+        #     not value_at(row, 6)
+        #     and not value_at(row, 9)
+        # ):
+        #     continue
+
+        R["shareholding"][
+            "shareholding_pattern_detailed"
+        ].append(
+            {
+                "serial_no": value_at(row, 0),
+
+                "shareholder_name": shareholder_name,
+
+                "category": value_at(row, 2),
+
+                "category_more_than_1_percent": value_at(row, 3),
+
+                "bank_name": value_at(row, 4),
+
+                "shareholders": value_at(row, 5),
+
+                "fully_paid_equity_shares": value_at(row, 6),
+
+                "partly_paid_equity_shares": value_at(row, 7),
+
+                "depository_receipts": value_at(row, 8),
+
+                "total_shares_held": value_at(row, 9),
+
+                "shareholding_percent": value_at(row, 10),
+
+                "voting_rights_class_x": value_at(row, 11),
+
+                "voting_rights_class_y": value_at(row, 12),
+
+                "total_voting_rights": value_at(row, 13),
+
+                "voting_rights_percent": value_at(row, 14),
+
+                "outstanding_convertible_securities": value_at(row, 15),
+
+                "outstanding_warrants": value_at(row, 16),
+
+                "outstanding_esop": value_at(row, 17),
+
+                "total_underlying_convertible_warrants_esop": value_at(row, 18),
+
+                "fully_diluted_total_shares": value_at(row, 19),
+
+                "fully_diluted_shareholding_percent": value_at(row, 20),
+
+                "locked_in_shares": value_at(row, 21),
+
+                "locked_in_shares_percent": value_at(row, 22),
+
+                "pledged_shares": value_at(row, 23),
+
+                "pledged_shares_percent": value_at(row, 24),
+
+                "non_disposal_undertaking_shares": value_at(row, 25),
+
+                "non_disposal_undertaking_percent": value_at(row, 26),
+
+                "other_encumbrances_shares": value_at(row, 27),
+
+                "other_encumbrances_percent": value_at(row, 28),
+
+                "total_encumbered_shares": value_at(row, 29),
+
+                "total_encumbered_shares_percent": value_at(row, 30),
+
+                "dematerialized_shares": value_at(row, 31),
+
+                "subcategory_i": value_at(row, 32),
+
+                "subcategory_ii": value_at(row, 33),
+
+                "subcategory_iii": value_at(row, 34),
+
+                "shareholder_type": value_at(row, 35)
+            }
+        )
+
+    print(
+        "DETAILED SHAREHOLDERS:",
+        len(
+            R["shareholding"][
+                "shareholding_pattern_detailed"
+            ]
+        )
+    )
+
+    
 # =====================================================
 # BRSR
 # =====================================================
