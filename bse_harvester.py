@@ -5,6 +5,9 @@ from datetime import datetime
 import html as html_lib
 import time
 import re
+import requests
+import csv
+import json
 
 COMPANY = input("Company Name: ").strip()
 
@@ -518,8 +521,115 @@ with sync_playwright() as p:
             e
         )
 
-    print("\nDONE")
+ # --------------------------------------------------
+# CREDIT RATING DETAILS
+# --------------------------------------------------
 
+    try:
+
+        # Return to company page
+        page.goto(
+            company_url,
+            wait_until="networkidle"
+        )
+
+        time.sleep(2)
+
+        # Open "Centralised Database"
+        page.locator("a[data-bs-target='#centralisedDatabase']").click()
+
+        time.sleep(1)
+
+        # Click "Credit Rating Details"
+        page.locator(
+            "a[data-page='Centralizeddb-Creditratingdetails']"
+        ).click()
+
+        page.wait_for_load_state("networkidle")
+
+        time.sleep(2)
+
+       # Save page
+        save_html(
+        "credit_rating_page",
+        page
+    )
+
+    # ----------------------------
+    # Download CSV
+    # ----------------------------
+
+        download_link = page.locator(
+        "a[aria-label='Download file']"
+    )
+
+        if download_link.count() == 0:
+
+            print("No download button found.")
+
+        else:
+
+            href = download_link.get_attribute("href")
+
+            print("\nDownload URL:")
+            print(href)
+
+            if href.startswith("/"):
+
+                href = "https://www.bseindia.com" + href
+
+            response = page.context.request.get(
+            href,
+            headers={
+                "Referer": "https://www.bseindia.com/",
+                "Accept": "text/csv,*/*"
+                    }
+                )
+
+        
+
+            csv_path = OUTPUT / "credit_rating.csv"
+
+            with open(csv_path, "wb") as f:
+                f.write(response.body())
+
+            print(f"[SAVED] {csv_path}")
+
+
+            json_path = OUTPUT / "credit_rating.json"
+
+            with open(csv_path, newline="", encoding="utf-8-sig") as f:
+               rows = list(csv.DictReader(f))
+
+            if len(rows) == 0:
+
+                credit_rating = {
+                "status": "empty",
+                "records": []
+            }
+
+            else:
+
+                credit_rating = {
+             "status": "success",
+                "records": rows
+            }
+
+            with open(json_path, "w", encoding="utf-8") as f:
+
+                json.dump(
+                credit_rating,
+                f,
+                indent=4,
+                ensure_ascii=False
+            )
+
+            print(f"[SAVED] {json_path}")
+        
+    except Exception as e:
+
+        print("Credit Rating Error:", e)
+        
     print(
         """
 Expected files:
@@ -538,6 +648,9 @@ brsr_xbrl.html
 
 cra_table.html
 erp_table.html
+
+credit_rating.csv
+credit_rating.json
 """
     )
 

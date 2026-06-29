@@ -8,7 +8,9 @@ O = Path("output")
 WARNINGS = []
 
 R = {
+
     "finance": {
+        "chapter": 7,
         "raw_file": "finance_xbrl.html",
         "segment_reporting": {
             "metadata": {},
@@ -18,23 +20,39 @@ R = {
             "segment_liabilities": []
         }
     },
+
     "governance": {
+        "chapter": 15,
         "raw_file": "governance_detail.html",
         "board_of_directors": []
     },
+
     "shareholding": {
-    "raw_file": "shareholding_xbrl.html",
-
-    "shareholding_pattern": [],
-
-    "shareholding_pattern_detailed": []
+        "chapter": 17,
+        "raw_file": "shareholding_xbrl.html",
+        "shareholding_pattern": [],
+        "shareholding_pattern_detailed": []
     },
+
     "brsr": {
+        "chapter": 13,
         "raw_file": "brsr_xbrl.html",
         "holding_subsidiary_associate_jv": []
     },
-    "cra": [],
-    "erp": []
+
+    "credit_information": {
+        "chapter": 24,
+
+        "cra": [],
+
+        "erp": [],
+
+        "credit_rating_details": {
+            "status": "empty",
+            "raw_file": "credit_rating.csv",
+            "data": []
+        }
+    }
 }
 
 
@@ -1514,9 +1532,7 @@ if html:
 
             seen.add(key)
 
-            R["cra"].append(
-                item
-            )
+            R["credit_information"]["cra"].append(item)
 
 
 # =====================================================
@@ -1560,17 +1576,25 @@ if html:
 
                 row = row[:len(header)]
 
-                R["erp"].append(
-                    dict(
-                        zip(
-                            header,
-                            row
-                        )
-                    )
-                )
+                R["credit_information"]["erp"].append(
+    dict(
+        zip(
+            header,
+            row
+        )
+    )
+)
 
             break
 
+
+credit_file = O / "credit_rating.json"
+
+if credit_file.exists():
+
+    with open(credit_file, "r", encoding="utf-8") as f:
+
+        R["credit_information"]["credit_rating_details"] = json.load(f)
 
 # =====================================================
 # SAVE
