@@ -4,7 +4,12 @@ import json
 import re
 import sys
 
-O = Path("output")
+BASE_OUTPUT = Path("output")
+
+COMPANY = input("Company Name: ").strip()
+
+company_folder = BASE_OUTPUT / COMPANY
+
 WARNINGS = []
 
 R = {
@@ -62,7 +67,7 @@ R = {
 
 def read_html(name):
 
-    p = O / name
+    p = company_folder / name
 
     if not p.exists():
         warn(f"Missing input file: {p}")
@@ -1588,7 +1593,7 @@ if html:
             break
 
 
-credit_file = O / "credit_rating.json"
+credit_file = company_folder / "credit_rating.json"
 
 if credit_file.exists():
 
@@ -1600,9 +1605,12 @@ if credit_file.exists():
 # SAVE
 # =====================================================
 
-O.mkdir(exist_ok=True)
+company_folder.mkdir(
+    parents=True,
+    exist_ok=True
+)
 
-out = O / "company_data.json"
+out = company_folder / "company_data.json"
 
 with open(
     out,

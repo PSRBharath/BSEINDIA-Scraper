@@ -11,13 +11,15 @@ import json
 
 COMPANY = input("Company Name: ").strip()
 
-OUTPUT = Path("output")
-OUTPUT.mkdir(exist_ok=True)
+# OUTPUT = Path("output")
+# OUTPUT.mkdir(exist_ok=True)
+BASE_OUTPUT = Path("output")
+BASE_OUTPUT.mkdir(exist_ok=True)
 
 
-def save_html(name, page):
+def save_html(name, page, output_dir):
 
-    file = OUTPUT / f"{name}.html"
+    file = output_dir / f"{name}.html"
 
     with open(file, "w", encoding="utf-8") as f:
         f.write(page.content())
@@ -168,7 +170,7 @@ def latest_quarter_label(page):
     return labels[0] if labels else None
 
 
-def save_latest_xbrl(page, name):
+def save_latest_xbrl(page, name, output_dir):
 
     try:
 
@@ -196,7 +198,8 @@ def save_latest_xbrl(page, name):
 
         save_html(
             f"{name}_xbrl",
-            xbrl_page
+            xbrl_page,
+            output_dir
         )
 
         xbrl_page.close()
@@ -286,6 +289,20 @@ with sync_playwright() as p:
     print("\nCompany URL:")
     print(company_url)
 
+    safe_company_name = re.sub(
+    r'[<>:"/\\|?*]',
+    "_",
+    COMPANY.strip()
+    )
+
+    company_folder = BASE_OUTPUT / safe_company_name
+
+    company_folder.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    print(f"\nOutput Folder: {company_folder}")
     # --------------------------------------------------
     # FINANCE
     # --------------------------------------------------
@@ -302,12 +319,14 @@ with sync_playwright() as p:
 
         save_html(
             "finance_listing",
-            page
+            page,
+            company_folder
         )
 
         save_latest_xbrl(
             page,
-            "finance"
+            "finance",
+            company_folder
         )
 
     except Exception as e:
@@ -333,7 +352,8 @@ with sync_playwright() as p:
 
         save_html(
             "governance_listing",
-            page
+            page,
+            company_folder
         )
 
         print("\nOpening latest governance quarter...")
@@ -366,7 +386,8 @@ with sync_playwright() as p:
 
         save_html(
             "governance_detail",
-            page
+            page,
+            company_folder
         )
 
     except Exception as e:
@@ -408,12 +429,14 @@ with sync_playwright() as p:
 
         save_html(
             "shareholding_listing",
-            page
+            page,
+            company_folder  
         )
 
         save_latest_xbrl(
             page,
-            "shareholding"
+            "shareholding",
+            company_folder
         )
 
     except Exception as e:
@@ -454,12 +477,14 @@ with sync_playwright() as p:
 
         save_html(
             "brsr_listing",
-            page
+            page,
+            company_folder
         )
 
         save_latest_xbrl(
             page,
-            "brsr"
+            "brsr",
+            company_folder
         )
 
     except Exception as e:
@@ -485,7 +510,8 @@ with sync_playwright() as p:
 
         save_html(
             "cra_table",
-            page
+            page,
+            company_folder
         )
 
     except Exception as e:
@@ -511,7 +537,8 @@ with sync_playwright() as p:
 
         save_html(
             "erp_table",
-            page
+            page,
+            company_folder
         )
 
     except Exception as e:
@@ -552,7 +579,8 @@ with sync_playwright() as p:
        # Save page
         save_html(
         "credit_rating_page",
-        page
+        page,
+        company_folder
     )
 
     # ----------------------------
@@ -588,7 +616,7 @@ with sync_playwright() as p:
 
         
 
-            csv_path = OUTPUT / "credit_rating.csv"
+            csv_path = company_folder / "credit_rating.csv"
 
             with open(csv_path, "wb") as f:
                 f.write(response.body())
@@ -596,7 +624,7 @@ with sync_playwright() as p:
             print(f"[SAVED] {csv_path}")
 
 
-            json_path = OUTPUT / "credit_rating.json"
+            json_path = company_folder / "credit_rating.json"
 
             with open(csv_path, newline="", encoding="utf-8-sig") as f:
                rows = list(csv.DictReader(f))
