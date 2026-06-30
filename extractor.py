@@ -6,7 +6,11 @@ import sys
 
 BASE_OUTPUT = Path("output")
 
-COMPANY = input("Company Name: ").strip()
+
+if len(sys.argv) > 1:
+    COMPANY = sys.argv[1].strip()
+else:
+    COMPANY = input("Company Name: ").strip()
 
 company_folder = BASE_OUTPUT / COMPANY
 

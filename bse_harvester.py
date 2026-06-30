@@ -5,17 +5,29 @@ from datetime import datetime
 import html as html_lib
 import time
 import re
-import requests
 import csv
 import json
+import sys
 
-COMPANY = input("Company Name: ").strip()
+if len(sys.argv) > 1:
+    COMPANY = sys.argv[1].strip()
+else:
+    COMPANY = input("Company Name: ").strip()
 
 # OUTPUT = Path("output")
 # OUTPUT.mkdir(exist_ok=True)
 BASE_OUTPUT = Path("output")
 BASE_OUTPUT.mkdir(exist_ok=True)
 
+STATUS = {
+    "finance": False,
+    "governance": False,
+    "shareholding": False,
+    "brsr": False,
+    "cra": False,
+    "erp": False,
+    "credit_rating": False
+}
 
 def save_html(name, page, output_dir):
 
@@ -179,7 +191,7 @@ def save_latest_xbrl(page, name, output_dir):
         print(f"{name}: Found {len(matches)} XBRL URLs")
 
         if not selected:
-            return
+            return False
 
         xbrl_url = selected["url"]
 
@@ -203,34 +215,15 @@ def save_latest_xbrl(page, name, output_dir):
         )
 
         xbrl_page.close()
+        return True
 
     except Exception as e:
 
         print(
-            f"{name} XBRL Error:",
-            e
-        )
-
-    try:
-
-        x = page.locator(
-            "text=XBRL"
-        ).first
-
-        print(f"\n{name} XBRL HTML:")
-
-        print(
-            x.evaluate(
-                "(e) => e.outerHTML"
-            )
-        )
-
-    except Exception as e:
-
-        print(
-            f"{name} XBRL HTML Error:",
-            e
-        )
+        f"{name} XBRL Error:",
+        e
+    )
+        return False
 
 
 with sync_playwright() as p:
@@ -322,12 +315,12 @@ with sync_playwright() as p:
             page,
             company_folder
         )
-
-        save_latest_xbrl(
-            page,
-            "finance",
-            company_folder
-        )
+        
+        STATUS["finance"] = save_latest_xbrl(
+    page,
+    "finance",
+    company_folder
+)
 
     except Exception as e:
 
@@ -355,7 +348,7 @@ with sync_playwright() as p:
             page,
             company_folder
         )
-
+        
         print("\nOpening latest governance quarter...")
 
         quarter = latest_quarter_label(page)
@@ -389,6 +382,7 @@ with sync_playwright() as p:
             page,
             company_folder
         )
+        STATUS["governance"] = True
 
     except Exception as e:
 
@@ -432,13 +426,13 @@ with sync_playwright() as p:
             page,
             company_folder  
         )
+        
 
-        save_latest_xbrl(
-            page,
-            "shareholding",
-            company_folder
-        )
-
+        STATUS["shareholding"] = save_latest_xbrl(
+    page,
+    "shareholding",
+    company_folder
+)
     except Exception as e:
 
         print(
@@ -480,13 +474,12 @@ with sync_playwright() as p:
             page,
             company_folder
         )
-
-        save_latest_xbrl(
-            page,
-            "brsr",
-            company_folder
-        )
-
+        
+        STATUS["brsr"] = save_latest_xbrl(
+    page,
+    "brsr",
+    company_folder
+)
     except Exception as e:
 
         print(
@@ -513,7 +506,7 @@ with sync_playwright() as p:
             page,
             company_folder
         )
-
+        STATUS["cra"] = True
     except Exception as e:
 
         print(
@@ -540,7 +533,7 @@ with sync_playwright() as p:
             page,
             company_folder
         )
-
+        STATUS["erp"] = True
     except Exception as e:
 
         print(
@@ -582,7 +575,7 @@ with sync_playwright() as p:
         page,
         company_folder
     )
-
+        
     # ----------------------------
     # Download CSV
     # ----------------------------
@@ -653,10 +646,18 @@ with sync_playwright() as p:
             )
 
             print(f"[SAVED] {json_path}")
+            STATUS["credit_rating"] = True
         
     except Exception as e:
 
         print("Credit Rating Error:", e)
+
+    status_file = company_folder / "harvest_status.json"
+
+    with open(status_file, "w") as f:
+                    json.dump(STATUS, f, indent=4)
+
+    print(f"[SAVED] {status_file}")
         
     print(
         """
@@ -682,8 +683,7 @@ credit_rating.json
 """
     )
 
-    input(
-        "\nPress Enter to close..."
-    )
+    if len(sys.argv) == 1:
+        input("\nPress Enter to close...")
 
     browser.close()
