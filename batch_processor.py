@@ -14,7 +14,7 @@ with open("companies.txt", "r") as f:
 # Number of parallel workers
 # Adjust depending on your machine.
 # For your current laptop (8 GB RAM), start with 3.
-MAX_WORKERS = min(3, len(companies))
+MAX_WORKERS = min(2, len(companies))
 
 
 def process_company(company):
